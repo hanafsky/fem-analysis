@@ -23,9 +23,9 @@ Given a natural language problem description, this skill automates:
 ## Directory structure
 
 ```
-fem-skill/
+fem-analysis/
 ├── skills/
-│   └── fem-skill/
+│   └── fem-analysis/
 │       ├── SKILL.md              # Skill definition (Claude Code)
 │       ├── references/           # FEM theory & code references
 │       │   ├── elasticity_2d.md
@@ -52,7 +52,7 @@ fem-skill/
 - **macOS** (Apple Silicon / Intel) — FreeFEM++ via Homebrew
 - **Linux / WSL** — FreeFEM++ via apt
 
-See `skills/fem-skill/references/project_setup.md` for detailed setup instructions.
+See `skills/fem-analysis/references/project_setup.md` for detailed setup instructions.
 
 ## Installation
 
@@ -64,18 +64,18 @@ Claude Code discovers skills from two locations. Choose one:
 ```bash
 # From your project root
 mkdir -p .claude/skills
-cp -r /path/to/fem-skill/skills/fem-skill .claude/skills/
+cp -r /path/to/fem-analysis/skills/fem-analysis .claude/skills/
 ```
 
 **Personal / global** (available in all your projects):
 ```bash
 mkdir -p ~/.claude/skills
-cp -r /path/to/fem-skill/skills/fem-skill ~/.claude/skills/
+cp -r /path/to/fem-analysis/skills/fem-analysis ~/.claude/skills/
 ```
 
 After copying, verify the structure:
 ```
-.claude/skills/fem-skill/
+.claude/skills/fem-analysis/
 ├── SKILL.md
 ├── references/
 ├── scripts/
@@ -112,7 +112,7 @@ FreeFem++ --version
 python -c "import pyvista; print(pyvista.__version__)"
 ```
 
-For the full project scaffold (React viewer, vite config, etc.), see [`skills/fem-skill/references/project_setup.md`](skills/fem-skill/references/project_setup.md).
+For the full project scaffold (React viewer, vite config, etc.), see [`skills/fem-analysis/references/project_setup.md`](skills/fem-analysis/references/project_setup.md).
 
 ## License
 
