@@ -23,28 +23,34 @@ fem-workbench/
 └── README.md
 ```
 
-## Step 1: Homebrew Essentials
+## Step 1: FreeFEM++ and System Tools
+
+### FreeFEM++
+
+Download the .dmg installer from the official releases:
+https://github.com/FreeFem/FreeFem-sources/releases
+
+Choose the appropriate build (Apple Silicon or Intel).
 
 ```bash
-# Homebrew itself (skip if already installed)
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# Mount the .dmg, then install:
+sudo cp -rf /Volumes/<mounted-dmg>/FreeFem++.app /Applications/
+sudo xattr -rc /Applications/FreeFem++.app
 
-# FreeFEM++
-brew install freefem
-
-# gmsh (optional, for complex 3D geometry)
-brew install gmsh
+# Add to PATH (adjust version number as needed):
+#   bash/zsh:
+echo 'export PATH="/Applications/FreeFem++.app/Contents/ff-4.15.1/bin:$PATH"' >> ~/.zprofile
+#   fish:
+fish_add_path /Applications/FreeFem++.app/Contents/ff-4.15.1/bin
 
 # Verify
 FreeFem++ --version
-# If "command not found":
-#   ls /opt/homebrew/bin/FreeFem*    # Apple Silicon
-#   ls /usr/local/bin/FreeFem*       # Intel
 ```
 
-**macOS Gatekeeper note:** First run may be blocked.
+### gmsh (optional)
+
 ```bash
-xattr -d com.apple.quarantine $(which FreeFem++)
+brew install gmsh    # for complex 3D geometry
 ```
 
 ## Step 2: Python Environment (uv)
@@ -55,7 +61,7 @@ source $HOME/.local/bin/env
 
 mkdir fem-workbench && cd fem-workbench
 uv init
-uv add pyvista meshio numpy vtk matplotlib
+uv add pyvista meshio numpy vtk matplotlib scipy
 uv add --dev pytest ipython
 ```
 
@@ -72,6 +78,7 @@ dependencies = [
     "numpy>=1.24",
     "vtk>=9.3",
     "matplotlib>=3.7",
+    "scipy>=1.11",
 ]
 
 [project.scripts]
@@ -175,6 +182,8 @@ If developing on WSL (Windows Subsystem for Linux) or native Linux instead of ma
 ```bash
 # FreeFEM++
 sudo apt update && sudo apt install -y freefem++
+# If apt version is too old or unavailable, download from:
+#   https://github.com/FreeFem/FreeFem-sources/releases
 
 # gmsh (optional, for complex geometry)
 sudo apt install -y gmsh
@@ -193,7 +202,7 @@ source $HOME/.local/bin/env
 
 mkdir fem-workbench && cd fem-workbench
 uv init
-uv add pyvista meshio numpy vtk matplotlib
+uv add pyvista meshio numpy vtk matplotlib scipy
 uv add --dev pytest ipython
 ```
 

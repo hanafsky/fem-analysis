@@ -49,7 +49,7 @@ fem-analysis/
 
 ## Platform support
 
-- **macOS** (Apple Silicon / Intel) — FreeFEM++ via Homebrew
+- **macOS** (Apple Silicon / Intel) — FreeFEM++ via official .dmg installer
 - **Linux / WSL** — FreeFEM++ via apt
 
 See `skills/fem-analysis/references/project_setup.md` for detailed setup instructions.
@@ -86,23 +86,39 @@ After copying, verify the structure:
 
 The skill generates and runs FEM code, so the following tools must be installed on your system.
 
-**macOS (Homebrew):**
+**macOS:**
 ```bash
-brew install freefem
-brew install gmsh          # optional, for complex geometry
+# FreeFEM++ — download .dmg from official releases:
+#   https://github.com/FreeFem/FreeFem-sources/releases
+# Then install:
+sudo cp -rf /Volumes/<mounted-dmg>/FreeFem++.app /Applications/
+sudo xattr -rc /Applications/FreeFem++.app
+# Add to PATH (adjust version number as needed):
+#   bash/zsh: echo 'export PATH="/Applications/FreeFem++.app/Contents/ff-4.15.1/bin:$PATH"' >> ~/.zprofile
+#   fish:     fish_add_path /Applications/FreeFem++.app/Contents/ff-4.15.1/bin
 
-# Python dependencies (via uv)
+# gmsh (optional, for complex geometry)
+brew install gmsh
+
+# Python environment (via uv)
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv add pyvista meshio numpy vtk matplotlib
+mkdir fem-workbench && cd fem-workbench
+uv init
+uv add pyvista meshio numpy vtk matplotlib scipy
 ```
 
 **Linux / WSL (apt):**
 ```bash
 sudo apt update && sudo apt install -y freefem++ gmsh
+# If apt version is too old or unavailable, download from:
+#   https://github.com/FreeFem/FreeFem-sources/releases
 sudo apt install -y libgl1-mesa-glx xvfb   # for headless rendering
 
+# Python environment (via uv)
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv add pyvista meshio numpy vtk matplotlib
+mkdir fem-workbench && cd fem-workbench
+uv init
+uv add pyvista meshio numpy vtk matplotlib scipy
 ```
 
 ### 3. Verify

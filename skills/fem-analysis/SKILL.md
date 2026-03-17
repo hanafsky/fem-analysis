@@ -79,6 +79,9 @@ sudo apt update && sudo apt install -y freefem++
 
 Binary path: `/usr/bin/FreeFem++` (apt version)
 
+If the apt version is too old or unavailable, download official binaries from:
+https://github.com/FreeFem/FreeFem-sources/releases
+
 #### PyVista on Linux/WSL (headless)
 
 WSL and headless Linux require `xvfb` for off-screen rendering:
@@ -109,7 +112,7 @@ matplotlib.use("Agg")  # Always use Agg in headless environments
 
 ## Available Tools
 
-- FreeFEM++ 4.x — PDE solver (`brew install freefem` on macOS / `sudo apt install freefem++` on Linux)
+- FreeFEM++ 4.x — PDE solver (official .dmg on macOS / `sudo apt install freefem++` on Linux)
 - gmsh — Advanced mesh generation (`brew install gmsh` / `sudo apt install gmsh`)
 - Python 3.10+ — via uv or system package manager
 - PyVista + VTK — 3D visualization (native arm64 wheels on Apple Silicon)
@@ -133,13 +136,17 @@ Clarify with user if needed: geometry, physics type, materials, BCs, desired out
 - `references/shape_optimization.md` — Parametric, Geometric, FreeFEM optimizers (BFGS/IPOPT/NLopt)
 - `references/h1_gradient_method.md` — Azegami H1 gradient method (Traction Method): gradient/Newton/theta methods, domain/boundary integral formulations
 - `references/cmap_examples.md` — CMAP official toolbox code examples (Geometric / Level-Set / Homogenization)
+- `references/3d_gmsh_freefem.md` — 3D Gmsh + FreeFEM++ (gmshload3, OCC workflow, volume classification)
+
+**Output directory**: Always create a `results/` subdirectory and write all outputs there to keep the workspace clean:
+```freefem
+system("mkdir -p results");
+savemesh(Th, "results/mesh.msh");
+{ ofstream f("results/solution.txt"); for(int i=0; i<Vh.ndof; i++) f << u[][i] << endl; }
+```
 
 **CRITICAL: iovtk plugin is NOT available on this system.**
-Always use text-based output:
-```freefem
-savemesh(Th, "mesh.msh");
-{ ofstream f("solution.txt"); for(int i=0; i<Vh.ndof; i++) f << u[][i] << endl; }
-```
+Always use text-based output as shown above.
 
 **P2→P1 projection**: When solving with P2, project before saving:
 ```freefem
@@ -150,6 +157,7 @@ Wh ux = u;  // P2 → P1 projection
 ### Step 3: Execute
 
 ```bash
+mkdir -p results
 FreeFem++ problem.edp 2>&1
 ```
 
@@ -160,10 +168,23 @@ If not in PATH:
 /usr/bin/FreeFem++ problem.edp 2>&1              # Linux/WSL (apt)
 ```
 
-### Step 4: Visualize with PyVista
+### Step 4: Visualize
 
-Use `scripts/ff_mesh_reader.py` for mesh parsing and `scripts/visualize.py` for rendering.
-Set `os.environ["PYVISTA_OFF_SCREEN"] = "true"` BEFORE importing pyvista in Claude Code sessions.
+Use `scripts/ff_mesh_reader.py` for mesh parsing. Choose the renderer based on the task:
+
+**matplotlib (preferred for 2D)**:
+- Scalar field contour plots (temperature, stress, velocity, etc.)
+- Streamline plots (Stokes flow)
+- Better layout control, cleaner labels, publication-quality output
+- Use `matplotlib.tri.Triangulation` for triangle mesh plotting
+
+**PyVista (use when needed)**:
+- Deformed mesh overlay (original wireframe + deformed shape) via `scripts/visualize.py`
+- 3D visualization or interactive rotation
+- Multi-panel comparison views
+- Set `os.environ["PYVISTA_OFF_SCREEN"] = "true"` BEFORE importing pyvista
+
+Read input from and save images to `results/` directory.
 
 ### Step 5: AI Self-Evaluation Loop
 
@@ -179,13 +200,18 @@ Export mesh+solution as JSON → React artifact with Three.js/Plotly for rotatio
 ## Common Gotchas
 
 1. **iovtk unavailable** → always use text output + Python conversion
-2. **Set PYVISTA_OFF_SCREEN** before import (Claude Code sessions)
-3. Auto-scale deformation: `scale = 0.1 * L / max_displacement`
+2. **2D visualization**: Prefer matplotlib over PyVista — better layout, cleaner scalar bars, publication-quality output. PyVista's off-screen rendering tends to produce small meshes with cut-off labels in 2D.
+3. **Set PYVISTA_OFF_SCREEN** before import (only when using PyVista)
+4. Auto-scale deformation: `scale = 0.1 * L / max_displacement`
 4. FreeFem .msh is NOT gmsh format — use custom parser in scripts/
 5. Boundary labels: 1=bottom, 2=right, 3=top, 4=left (rectangle convention)
 6. **Homebrew binary name**: Check `FreeFem++` vs `freefem++` (case varies by version)
 7. **Apple Silicon (arm64)**: VTK/PyVista wheels are native — no Rosetta needed
 8. **macOS Gatekeeper**: First run may need `xattr -d com.apple.quarantine $(which FreeFem++)`
+9.  **3D Gmsh: use OCC solids, not Extrude** — Box/Cylinder + BooleanFragments for stable surface IDs. Extrude causes gmshload3 "Border element not in mesh" errors.
+10. **3D: never Physical Surface internal interfaces** — Interior faces shared by two tets crash gmshload3. Extract interface data via Python post-processing (z ≈ target filter).
+11. **3D Volume classification: use centroid z, not BoundingBox** — `Volume In BoundingBox` returns intersecting (not contained) volumes, causing duplicates.
+12. **3D FreeFEM++ coordinates: use `Th(i).x`** — `Wh(i).x` is 2D-only. For mesh3, always use `Th(i).x/y/z`.
 
 ## Local Dev Setup
 

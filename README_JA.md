@@ -49,7 +49,7 @@ fem-analysis/
 
 ## 対応プラットフォーム
 
-- **macOS**（Apple Silicon / Intel）— Homebrew で FreeFEM++ をインストール
+- **macOS**（Apple Silicon / Intel）— 公式 .dmg インストーラーで FreeFEM++ をインストール
 - **Linux / WSL** — apt で FreeFEM++ をインストール
 
 詳細なセットアップ手順は `skills/fem-analysis/references/project_setup.md` を参照してください。
@@ -86,23 +86,39 @@ cp -r /path/to/fem-analysis/skills/fem-analysis ~/.claude/skills/
 
 スキルは FEM コードの生成・実行を行うため、以下のツールがシステムに必要です。
 
-**macOS（Homebrew）：**
+**macOS：**
 ```bash
-brew install freefem
-brew install gmsh          # 任意（複雑な形状向け）
+# FreeFEM++ — 公式リリースから .dmg をダウンロード：
+#   https://github.com/FreeFem/FreeFem-sources/releases
+# インストール：
+sudo cp -rf /Volumes/<マウントされたdmg>/FreeFem++.app /Applications/
+sudo xattr -rc /Applications/FreeFem++.app
+# PATH に追加（バージョン番号は適宜変更）：
+#   bash/zsh: echo 'export PATH="/Applications/FreeFem++.app/Contents/ff-4.15.1/bin:$PATH"' >> ~/.zprofile
+#   fish:     fish_add_path /Applications/FreeFem++.app/Contents/ff-4.15.1/bin
 
-# Python 依存パッケージ（uv 経由）
+# gmsh（任意、複雑な形状向け）
+brew install gmsh
+
+# Python 環境（uv 経由）
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv add pyvista meshio numpy vtk matplotlib
+mkdir fem-workbench && cd fem-workbench
+uv init
+uv add pyvista meshio numpy vtk matplotlib scipy
 ```
 
 **Linux / WSL（apt）：**
 ```bash
 sudo apt update && sudo apt install -y freefem++ gmsh
+# apt版が古い/存在しない場合は公式リリースからダウンロード：
+#   https://github.com/FreeFem/FreeFem-sources/releases
 sudo apt install -y libgl1-mesa-glx xvfb   # ヘッドレス環境でのレンダリング用
 
+# Python 環境（uv 経由）
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv add pyvista meshio numpy vtk matplotlib
+mkdir fem-workbench && cd fem-workbench
+uv init
+uv add pyvista meshio numpy vtk matplotlib scipy
 ```
 
 ### 3. 動作確認
