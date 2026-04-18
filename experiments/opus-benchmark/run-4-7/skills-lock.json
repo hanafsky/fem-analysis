@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "fem-analysis": {
+      "source": "hanafsky/fem-analysis",
+      "sourceType": "github",
+      "computedHash": "dedd0cd7b93274112a65e261adc80f244fb353c52a5b1857cf3b2af451282b4c"
+    }
+  }
+}

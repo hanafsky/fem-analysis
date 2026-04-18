@@ -1,0 +1,180 @@
+// ============================================================
+// 2D Transient Heat Conduction — Cu / Steel with Thermal Contact Resistance
+//   - Two conformal meshes joined via block matrix
+//   - Temperature discontinuity at x=0.05 imposed by Rc coupling
+//   - Backward Euler, dt=5s, 60 steps (t: 0 -> 300s)
+// ============================================================
+
+// ---------- Physical parameters (SI units) ----------
+real k1   = 400.0;      // Copper conductivity [W/(m K)]
+real rho1 = 8960.0;     // Copper density      [kg/m^3]
+real cp1  = 385.0;      // Copper spec. heat   [J/(kg K)]
+
+real k2   = 50.0;       // Steel conductivity
+real rho2 = 7850.0;     // Steel density
+real cp2  = 490.0;      // Steel spec. heat
+
+real Rc   = 1.0e-4;     // Thermal contact resistance [m^2 K / W]
+real hconv = 10.0;      // Convection coeff on right edge [W/(m^2 K)]
+real Tinf  = 293.0;     // Ambient temperature [K]
+real Thot  = 373.0;     // Fixed temperature at x=0 [K]
+real T0    = 293.0;     // Initial uniform temperature [K]
+
+real dt    = 5.0;       // Time step [s]
+int  nstep = 60;        // Total steps -> t_end = 300 s
+
+// ---------- Geometry (meters) ----------
+real Lx1  = 0.05;       // Copper block width
+real Lx2  = 0.05;       // Steel  block width
+real Ly   = 0.03;       // Common height
+real xint = Lx1;        // Interface x coordinate
+
+// ---------- Mesh resolution ----------
+int nx = 40;            // elements in x per block
+int ny = 20;            // elements in y (matched on both blocks -> conformal interface)
+
+// ---------- Copper mesh Th1  (labels: 1=bottom, 2=interface(right), 3=top, 4=left) ----------
+border b1bot  (t=0,    Lx1) { x=t;       y=0;  label=1; }
+border b1int  (t=0,    Ly ) { x=Lx1;     y=t;  label=2; }   // interface (right side of Th1)
+border b1top  (t=Lx1,  0  ) { x=t;       y=Ly; label=3; }
+border b1left (t=Ly,   0  ) { x=0;       y=t;  label=4; }   // Dirichlet
+mesh Th1 = buildmesh(b1bot(nx) + b1int(ny) + b1top(nx) + b1left(ny));
+
+// ---------- Steel mesh Th2  (labels: 1=bottom, 2=right(conv), 3=top, 4=interface(left)) ----------
+border b2bot  (t=xint, xint+Lx2) { x=t;        y=0;  label=1; }
+border b2right(t=0,    Ly      ) { x=xint+Lx2; y=t;  label=2; }   // convection
+border b2top  (t=xint+Lx2, xint) { x=t;        y=Ly; label=3; }
+border b2int  (t=Ly,   0       ) { x=xint;     y=t;  label=4; }   // interface (left side of Th2)
+mesh Th2 = buildmesh(b2bot(nx) + b2right(ny) + b2top(nx) + b2int(ny));
+
+// ---------- FE spaces & state ----------
+fespace Vh1(Th1, P1);
+fespace Vh2(Th2, P1);
+Vh1 T1, v1, T1old;
+Vh2 T2, v2, T2old;
+
+T1old = T0;
+T2old = T0;
+T1    = T0;
+T2    = T0;
+
+int n1 = Vh1.ndof;
+int n2 = Vh2.ndof;
+cout << "Vh1 ndof = " << n1 << "   Vh2 ndof = " << n2 << endl;
+cout << "Total DOF = " << n1 + n2 << endl;
+
+// ---------- Bilinear forms ----------
+varf a11(T1, v1) =
+      int2d(Th1)( rho1*cp1/dt * T1*v1
+                + k1 * (dx(T1)*dx(v1) + dy(T1)*dy(v1)) )
+    + int1d(Th1, 2)( 1.0/Rc * T1 * v1 )                   // self-contrib from contact term
+    + on(4, T1 = 0);                                      // Dirichlet penalty rows
+
+varf a22(T2, v2) =
+      int2d(Th2)( rho2*cp2/dt * T2*v2
+                + k2 * (dx(T2)*dx(v2) + dy(T2)*dy(v2)) )
+    + int1d(Th2, 4)( 1.0/Rc * T2 * v2 )                   // self-contrib from contact term
+    + int1d(Th2, 2)( hconv * T2 * v2 );                   // convection LHS
+
+// Cross-mesh coupling: evaluates the trial function from the other mesh on this boundary.
+// Signature a(trial, test) -> matrix( trial_fespace, test_fespace ).
+varf a12(T2, v1) = - int1d(Th1, 2)( 1.0/Rc * T2 * v1 );
+varf a21(T1, v2) = - int1d(Th2, 4)( 1.0/Rc * T1 * v2 );
+
+// ---------- Assemble block matrix (once) ----------
+matrix A11 = a11(Vh1, Vh1, tgv = 1e30);
+matrix A22 = a22(Vh2, Vh2);
+matrix A12 = a12(Vh2, Vh1);   // cols ~ Vh2.ndof, rows ~ Vh1.ndof
+matrix A21 = a21(Vh1, Vh2);
+matrix A   = [ [ A11, A12 ],
+               [ A21, A22 ] ];
+set(A, solver = sparsesolver);
+
+cout << "Block matrix: " << A.n << " x " << A.m << endl;
+
+// ---------- Linear forms (RHS pieces, reassembled each step) ----------
+// NOTE: FreeFEM varf with 0 as "unknown" is a linear form.
+varf l1(unused, v1) =
+      int2d(Th1)( rho1*cp1/dt * T1old * v1 )
+    + on(4, unused = Thot);                   // Dirichlet value via tgv
+
+varf l2(unused, v2) =
+      int2d(Th2)( rho2*cp2/dt * T2old * v2 )
+    + int1d(Th2, 2)( hconv * Tinf * v2 );     // convection reference
+
+// ---------- Storage for monitoring ----------
+system("mkdir -p results");
+savemesh(Th1, "results/mesh_cu.msh");
+savemesh(Th2, "results/mesh_st.msh");
+
+// Centerline probe setup (y = Ly/2)
+real yprobe = 0.5 * Ly;
+int nprobeCu = 40;
+int nprobeSt = 40;
+ofstream centerline("results/centerline.csv");
+centerline << "time,side,x,T" << endl;
+
+// Helper: write a full P1 field
+func int dumpField(string fname, real[int] &vals) {
+    ofstream f(fname);
+    for (int i = 0; i < vals.n; i++) f << vals[i] << endl;
+    return 0;
+}
+
+// Timesteps to save full snapshots: t = 60, 150, 300 s  -> step = 12, 30, 60
+int[int] saveSteps = [12, 30, 60];
+
+// ---------- Time loop ----------
+real[int] b(n1 + n2);
+real[int] b1(n1);
+real[int] b2(n2);
+
+for (int s = 1; s <= nstep; s++) {
+
+    // Assemble RHS
+    b1 = l1(0, Vh1, tgv = 1e30);
+    b2 = l2(0, Vh2);
+
+    // Concatenate [b1; b2]
+    for (int i = 0; i < n1; i++) b[i]      = b1[i];
+    for (int i = 0; i < n2; i++) b[n1 + i] = b2[i];
+
+    // Solve
+    real[int] sol = A^-1 * b;
+
+    // Unpack
+    for (int i = 0; i < n1; i++) T1[][i] = sol[i];
+    for (int i = 0; i < n2; i++) T2[][i] = sol[n1 + i];
+
+    T1old = T1;
+    T2old = T2;
+
+    real tnow = s * dt;
+
+    cout << "step " << s << "  t=" << tnow
+         << "  T1 [min,max] = [" << T1[].min << ", " << T1[].max << "]"
+         << "   T2 [min,max] = [" << T2[].min << ", " << T2[].max << "]"
+         << endl;
+
+    // Centerline probe (every step)
+    for (int i = 0; i <= nprobeCu; i++) {
+        real xi = Lx1 * i / nprobeCu;
+        centerline << tnow << ",cu," << xi << "," << T1(xi, yprobe) << endl;
+    }
+    for (int i = 0; i <= nprobeSt; i++) {
+        real xi = Lx1 + Lx2 * i / nprobeSt;
+        centerline << tnow << ",st," << xi << "," << T2(xi, yprobe) << endl;
+    }
+
+    // Full-field snapshots at requested times
+    for (int k = 0; k < saveSteps.n; k++) {
+        if (s == saveSteps[k]) {
+            int tlabel = s * 5;   // seconds
+            dumpField("results/T1_t" + tlabel + ".txt", T1[]);
+            dumpField("results/T2_t" + tlabel + ".txt", T2[]);
+            cout << "  -> snapshot saved at t=" << tlabel << "s" << endl;
+        }
+    }
+}
+
+cout << "Done. Simulation reached t = " << nstep*dt << " s." << endl;

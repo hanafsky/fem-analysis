@@ -1,0 +1,169 @@
+// =====================================================================
+// Transient heat conduction between copper and steel with imperfect
+// contact (Rc = 1e-4 m^2 K / W) — two-mesh formulation with Picard
+// coupling so the temperature can be discontinuous across the interface.
+// =====================================================================
+
+// -------- Geometry [m] --------
+real W1 = 0.050;         // Cu block width
+real W2 = 0.050;         // Steel block width
+real H  = 0.030;         // height
+
+// -------- Materials --------
+real lam1  = 400.0,  rho1 = 8960.0, cp1 = 385.0;   // Copper
+real lam2  = 50.0,   rho2 = 7850.0, cp2 = 490.0;   // Steel
+
+// -------- BCs / Interface --------
+real Thot = 373.0;        // Dirichlet at x=0
+real Tinf = 293.0;        // ambient
+real hconv = 10.0;        // convection at x=0.1
+real Rc    = 1.0e-4;      // contact thermal resistance [m^2 K / W]
+real hc    = 1.0/Rc;      // contact conductance [W/(m^2 K)]
+
+// -------- Time --------
+real dt     = 5.0;
+real tend   = 300.0;
+int  nsteps = int(tend/dt + 0.5);
+
+// -------- Mesh resolution --------
+int nx1 = 50, nx2 = 50, ny = 30;
+
+// -------- Boundary labels --------
+// 1 = left Dirichlet, 2 = right convection, 3 = top/bottom adiabatic,
+// 4 = interface.   Borders traversed CCW around each subdomain.
+// Cu: boCu (bottom L->R) -> iC (right B->T) -> tCu (top R->L) -> bL (left T->B)
+border boCu (t=0,W1)   { x=t;       y=0;     label=3; }
+border iC   (t=0,H)    { x=W1;      y=t;     label=4; }
+border tCu  (t=W1,0)   { x=t;       y=H;     label=3; }
+border bL   (t=H,0)    { x=0;       y=t;     label=1; }
+
+// Steel: boSt (bottom L->R) -> bR (right B->T) -> tSt (top R->L) -> iS (left T->B)
+border boSt (t=W1,W1+W2) { x=t;       y=0;     label=3; }
+border bR   (t=0,H)      { x=W1+W2;  y=t;     label=2; }
+border tSt  (t=W1+W2,W1) { x=t;       y=H;     label=3; }
+border iS   (t=H,0)      { x=W1;      y=t;     label=4; }
+
+mesh ThCu = buildmesh(boCu(nx1) + iC(ny) + tCu(nx1) + bL(ny));
+mesh ThSt = buildmesh(boSt(nx2) + bR(ny) + tSt(nx2) + iS(ny));
+
+cout << "ThCu: nv=" << ThCu.nv << " nt=" << ThCu.nt << endl;
+cout << "ThSt: nv=" << ThSt.nv << " nt=" << ThSt.nt << endl;
+
+// -------- FE spaces --------
+fespace Vh1(ThCu, P1);
+fespace Vh2(ThSt, P1);
+
+Vh1 T1, v1, T1old, T1prev, T2onCu;
+Vh2 T2, v2, T2old, T2prev, T1onSt;
+
+T1old = Tinf;           // initial condition T=293 K
+T2old = Tinf;
+T1    = Tinf;
+T2    = Tinf;
+
+// -------- Problems (Picard iteration within each time step) --------
+problem HeatCu(T1, v1) =
+      int2d(ThCu)(rho1*cp1/dt * T1 * v1)
+    + int2d(ThCu)(lam1 * (dx(T1)*dx(v1) + dy(T1)*dy(v1)))
+    + int1d(ThCu, 4)(hc * T1 * v1)
+    - int1d(ThCu, 4)(hc * T2onCu * v1)
+    - int2d(ThCu)(rho1*cp1/dt * T1old * v1)
+    + on(1, T1 = Thot);
+
+problem HeatSt(T2, v2) =
+      int2d(ThSt)(rho2*cp2/dt * T2 * v2)
+    + int2d(ThSt)(lam2 * (dx(T2)*dx(v2) + dy(T2)*dy(v2)))
+    + int1d(ThSt, 4)(hc * T2 * v2)
+    - int1d(ThSt, 4)(hc * T1onSt * v2)
+    + int1d(ThSt, 2)(hconv * T2 * v2)
+    - int1d(ThSt, 2)(hconv * Tinf * v2)
+    - int2d(ThSt)(rho2*cp2/dt * T2old * v2);
+
+// Save meshes
+savemesh(ThCu, "results/mesh_cu.msh");
+savemesh(ThSt, "results/mesh_st.msh");
+
+// Log header
+ofstream flog("results/log.txt");
+flog << "# step  time   picardIters  resid  T1midInterface  T2midInterface  deltaT" << endl;
+
+// Pick snapshot steps: t=60 => step 12, 150 => 30, 300 => 60
+int[int] snapSteps  = [12, 30, 60];
+real[int] snapTimes = [60.0, 150.0, 300.0];
+
+func string pad3(int n) {
+    if (n < 10)  return "00" + n;
+    if (n < 100) return "0" + n;
+    return "" + n;
+}
+
+// -------- Time loop --------
+for (int n = 1; n <= nsteps; n++) {
+    real tcur = n * dt;
+
+    // Picard iteration
+    int maxIter = 50;
+    real tol = 1.0e-5;
+    int iter = 0;
+    real resid = 1.0;
+    T1prev = T1old;
+    T2prev = T2old;
+    T2onCu = T2old;
+    T1onSt = T1old;
+
+    while (iter < maxIter && resid > tol) {
+        HeatCu;
+        T1onSt = T1;
+        HeatSt;
+        T2onCu = T2;
+
+        real d1 = sqrt(int2d(ThCu)((T1 - T1prev)^2));
+        real d2 = sqrt(int2d(ThSt)((T2 - T2prev)^2));
+        resid = d1 + d2;
+        T1prev = T1;
+        T2prev = T2;
+        iter++;
+    }
+
+    T1old = T1;
+    T2old = T2;
+
+    // Mid-interface temperatures (x=W1, y=H/2)
+    real T1mid = T1(W1, H/2);
+    real T2mid = T2(W1, H/2);
+
+    flog << n << "  " << tcur << "  " << iter << "  " << resid
+         << "  " << T1mid << "  " << T2mid
+         << "  " << (T1mid - T2mid) << endl;
+
+    // Snapshot if needed
+    for (int k = 0; k < snapSteps.n; k++) {
+        if (n == snapSteps[k]) {
+            string tag = pad3(int(snapTimes[k] + 0.5));
+            {
+                ofstream f("results/T_cu_" + tag + ".txt");
+                f.precision(10);
+                for (int i = 0; i < Vh1.ndof; i++) f << T1[][i] << endl;
+            }
+            {
+                ofstream f("results/T_st_" + tag + ".txt");
+                f.precision(10);
+                for (int i = 0; i < Vh2.ndof; i++) f << T2[][i] << endl;
+            }
+            // interface profile (one-line per interface node from each side)
+            {
+                ofstream fi("results/iface_" + tag + ".txt");
+                fi << "# y  T_cu  T_st" << endl;
+                fi.precision(10);
+                // Sample along the interface at y = j*H/ny (ny+1 points)
+                for (int j = 0; j <= ny; j++) {
+                    real yq = j * (H / ny);
+                    fi << yq << "  " << T1(W1, yq) << "  " << T2(W1, yq) << endl;
+                }
+            }
+            cout << "Snapshot saved at t=" << tcur << " s  (step " << n << ")" << endl;
+        }
+    }
+}
+
+cout << "Simulation finished." << endl;
